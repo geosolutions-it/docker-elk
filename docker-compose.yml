@@ -1,6 +1,22 @@
 version: '3.2'
 
 services:
+  nginx:
+    container_name: 'nginx'
+    image: nginx:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - host
+      - default
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/dh-param/dhparam-2048.pem:/etc/ssl/certs/dhparam-2048.pem
+      - ./nginx/comodo/STAR_geo-solutions.it.key:/etc/ssl/certs/STAR_geo-solutions.it.key
+      - ./nginx/comodo/STAR_geo-solutions.it.pem:/etc/ssl/certs/STAR_geo-solutions.it.pem
+
   elasticsearch:
     build:
       context: elasticsearch/
@@ -14,16 +30,80 @@ services:
       - type: volume
         source: elasticsearch
         target: /usr/share/elasticsearch/data
+    restart: unless-stopped
     ports:
       - "9200:9200"
       - "9300:9300"
     environment:
-      ES_JAVA_OPTS: "-Xmx256m -Xms256m"
+      ES_JAVA_OPTS: "-Xmx4g -Xms4g"
+      # Only used at initialization time
       ELASTIC_PASSWORD: changeme
-    networks:
-      - elk
+
+  kibana:
+    build:
+      context: kibana/
+      args:
+        ELK_VERSION: $ELK_VERSION
+    volumes:
+      - type: bind
+        source: ./kibana/config/kibana.yml
+        target: /usr/share/kibana/config/kibana.yml
+        read_only: true
+    restart: unless-stopped
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+
+  heartbeat:
+    image: docker.elastic.co/beats/heartbeat:7.4.1
+    volumes:
+      - type: bind
+        source: ./heartbeat/heartbeat.yml
+        target: /usr/share/heartbeat/heartbeat.yml
+        read_only: true
+    command: ["--strict.perms=false"]
+    user: heartbeat
+    restart: unless-stopped
+    environment:
+      - output.elasticsearch.hosts='["elasticsearch:9200"]'
+    depends_on:
+      - elasticsearch
+      - kibana
+
+  elastalert:
+    # Stable version is incompatible with 7.4.1
+    image: bitsensor/elastalert:3.0.0-beta.1
+    volumes:
+      - type: bind
+        source: ./elastalert/config/elastalert.yaml
+        target: /opt/elastalert/config.yaml
+        read_only: false
+      - type: bind
+        source: ./elastalert/config/config.json
+        target: /opt/elastalert-server/config/config.json
+        read_only: false
+        #      - type: bind
+        #        source: ./elastalert/config/smtp_auth_file.yaml
+        #        target: /opt/elastalert-server/config/smtp_auth_file.yaml
+        #        read_only: false
+      - type: bind
+        source: ./elastalert/rules
+        target: /opt/elastalert/rules
+        read_only: false
+      - type: bind
+        source: ./elastalert/rule_templates
+        target: /opt/elastalert/rule_templates
+        read_only: false
+    restart: unless-stopped
+    ports:
+      - "3030:3030"
+      - "3333:3333"
+    depends_on:
+      - elasticsearch
 
   logstash:
+    restart: unless-stopped
     build:
       context: logstash/
       args:
@@ -38,35 +118,20 @@ services:
         target: /usr/share/logstash/pipeline
         read_only: true
     ports:
-      - "5000:5000"
+      - "443:5000"
+      - "444:5001"
       - "9600:9600"
     environment:
-      LS_JAVA_OPTS: "-Xmx256m -Xms256m"
-    networks:
-      - elk
-    depends_on:
-      - elasticsearch
+      LS_JAVA_OPTS: "-Xmx2g -Xms2g"
 
-  kibana:
-    build:
-      context: kibana/
-      args:
-        ELK_VERSION: $ELK_VERSION
-    volumes:
-      - type: bind
-        source: ./kibana/config/kibana.yml
-        target: /usr/share/kibana/config/kibana.yml
-        read_only: true
-    ports:
-      - "5601:5601"
-    networks:
-      - elk
-    depends_on:
-      - elasticsearch
+    extra_hosts:
+      - "elasticsearch:192.168.1.113"
 
 networks:
-  elk:
-    driver: bridge
+  default:
+    external:
+      name: elk
+  host:
 
 volumes:
   elasticsearch:

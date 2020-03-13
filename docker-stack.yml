@@ -11,10 +11,10 @@ services:
       - source: elastic_config
         target: /usr/share/elasticsearch/config/elasticsearch.yml
     environment:
-      ES_JAVA_OPTS: "-Xmx256m -Xms256m"
+      ES_JAVA_OPTS: "-Xmx4g -Xms4g"
       ELASTIC_PASSWORD: changeme
-    networks:
-      - elk
+      #    networks:
+      #      - elk
     deploy:
       mode: replicated
       replicas: 1
@@ -22,7 +22,7 @@ services:
   logstash:
     image: docker.elastic.co/logstash/logstash:7.4.1
     ports:
-      - "5000:5000"
+      - "443:5000"
       - "9600:9600"
     configs:
       - source: logstash_config
@@ -30,9 +30,9 @@ services:
       - source: logstash_pipeline
         target: /usr/share/logstash/pipeline/logstash.conf
     environment:
-      LS_JAVA_OPTS: "-Xmx256m -Xms256m"
-    networks:
-      - elk
+      LS_JAVA_OPTS: "-Xmx2g -Xms2g"
+      #    networks:
+      #      - elk
     deploy:
       mode: replicated
       replicas: 1
@@ -44,8 +44,8 @@ services:
     configs:
       - source: kibana_config
         target: /usr/share/kibana/config/kibana.yml
-    networks:
-      - elk
+        #    networks:
+        #      - elk
     deploy:
       mode: replicated
       replicas: 1
@@ -61,6 +61,7 @@ configs:
   kibana_config:
     file: ./kibana/config/kibana.yml
 
-networks:
-  elk:
-    driver: overlay
+    #networks:
+    #  elk:
+    #    driver: bridge
+    #driver: overlay
